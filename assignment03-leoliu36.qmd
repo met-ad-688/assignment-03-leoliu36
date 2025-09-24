@@ -74,8 +74,8 @@ print("Imputed Average_Salary:", average_salary)
 ## Impute Missing Salary values
 df = df.withColumn("SALARY_FROM", F.when(col("SALARY_FROM").isNull(), median_from).otherwise(col("SALARY_FROM"))).withColumn("SALARY_TO", F.when(col("SALARY_TO").isNull(), median_to).otherwise(col("SALARY_TO"))).withColumn("Salary", F.when(col("SALARY").isNull(), median_to).otherwise(col("SALARY"))).withColumn("Average_Salary", ((col("SALARY_FROM") + col("SALARY_TO"))/2).cast("double"))
 
-## Clean EDUCATION_LEVELS_NAME column by removing ", \n, and \r characters 
-df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_NAME", r'[\n\r\"]',''))
+## Clean EDUCATION_LEVELS_NAME and EMPLOYMENT_TYPE_NAME columns by removing ", \n, and \r characters 
+df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_NAME", r'[\[\]\\n\\r\"]',''))
 
 # Preview to verify that characters were removed correctly
 # df.select("EDUCATION_LEVELS_NAME").distinct().show(truncate=False)
@@ -92,6 +92,18 @@ filtered_df = df.filter((col("SALARY_FROM").isNotNull()) & (col("SALARY_FROM") >
 # Aggregate Data to group by NAICS2_NAME and EMPLOYMENT_TYPE_NAME and include salary distribution
 df1 = filtered_df.select("SALARY_FROM", "NAICS2_NAME", "EMPLOYMENT_TYPE_NAME").toPandas()
 
+# df.select("EMPLOYMENT_TYPE_NAME").distinct().show(truncate=False) verified that EMPLOYMENT_TYPE_NAME field required additional cleaning
+# Additional Cleaning on EMPLOYMENT_TYPE_NAME
+clean_legend = {
+  'Pat-time / full-time': 'Part-time / Full-time',
+  'Pat-time (â‰¤ 32 hous)':'Part-time (≤ 32 hours)',
+  'Full-time (> 32 hous)':'Full-time (>32 hours)'
+}
+
+# Update df to use cleaned values and remove nulls
+df1["EMPLOYMENT_TYPE_NAME"] = (df1["EMPLOYMENT_TYPE_NAME"].replace(clean_legend))
+df1=df1[df1["EMPLOYMENT_TYPE_NAME"].notnull()]
+
 ## Generate Visualization
 # Create Box Plot
 fig1 = px.box(
@@ -102,14 +114,15 @@ fig1 = px.box(
   title="Salary Distribution by Industry and Employment Type",
 )
 fig1.update_layout(
-    font=dict(family="Helvetica Neue", size=12, color="#333"),
+    font=dict(family="Helvetica Neue", size=9, color="#333"),
     title_font=dict(size=20, color="#1f77b4"),
     colorway=["#ec7424", "#a4abab"],
     xaxis_title="Industry",
     yaxis_title="Minimum Salary ($)",
-    xaxis_tickangle=45,
+    xaxis_tickangle=60,
     hovermode="x unified",
-    height=600
+    width=1400,
+    height=800
 )
 fig1.show()
 ```
