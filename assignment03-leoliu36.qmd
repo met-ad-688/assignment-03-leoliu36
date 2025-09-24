@@ -97,7 +97,7 @@ df1 = filtered_df.select("SALARY_FROM", "NAICS2_NAME", "EMPLOYMENT_TYPE_NAME").t
 clean_legend = {
   'Pat-time / full-time': 'Part-time / Full-time',
   'Pat-time (â‰¤ 32 hous)':'Part-time (≤ 32 hours)',
-  'Full-time (> 32 hous)':'Full-time (>32 hours)'
+  'Full-time (> 32 hous)':'Full-time (> 32 hours)'
 }
 
 # Update df to use cleaned values and remove nulls
@@ -117,6 +117,7 @@ fig1.update_layout(
     font=dict(family="Helvetica Neue", size=9, color="#333"),
     title_font=dict(size=20, color="#1f77b4"),
     colorway=["#ec7424", "#a4abab"],
+    legend_title="Employment Type",
     xaxis_title="Industry",
     yaxis_title="Minimum Salary ($)",
     xaxis_tickangle=60,
