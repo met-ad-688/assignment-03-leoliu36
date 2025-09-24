@@ -1,0 +1,87 @@
+---
+title: Assignment 03
+author:
+  - name: Leo Liu
+    affiliations:
+      - id: bu
+        name: Boston University
+        city: Boston
+        state: MA
+number-sections: true
+date: '2025-9-23'
+format:
+  html:
+    theme: cerulean
+    toc: true
+    toc-depth: 2
+date-modified: today
+date-format: long
+execute:
+  echo: false
+  eval: false
+  freeze: auto
+---
+
+```{python}
+import pandas as pd
+import plotly.express as px
+import plotly.io as pio
+from pyspark.sql import SparkSession
+import re
+import numpy as np
+import plotly.graph_objects as go
+from pyspark.sql.functions import col, split, explode, regexp_replace, transform, when
+from pyspark.sql import functions as F
+from pyspark.sql.functions import col, monotonically_increasing_id
+
+np.random.seed(42)
+
+pio.renderers.default = "notebook"
+
+# Initialize Spark Session
+spark = SparkSession.builder.appName("LightcastData").getOrCreate()
+
+# Load Data
+df = spark.read.option("header", "true").option("inferSchema", "true").option("multiLine","true").option("escape", "\"").csv("../data/lightcast_job_postings.csv")
+df.createOrReplaceTempView("job_postings")
+
+# Show Schema and Sample Data
+print("---This is Diagnostic check, No need to print it in the final doc---")
+
+df.printSchema() # comment this line when rendering the submission
+df.show(5)
+```
+
+```{python}
+# Data Cleaning 
+## ensure columns are numeric type for computing medians
+df = df.withColumn("SALARY_FROM", col("SALARY_FROM").cast("double")). withColumn("SALARY_TO", col("SALARY_TO").cast("double")).withColumn("SALARY", col("SALARY").cast("double")).withColumn("MIN_YEARS_EXPERIENCE", col("MIN_YEARS_EXPERIENCE").cast("double")).withColumn("MAX_YEARS_EXPERIENCE", col("MAX_YEARS_EXPERIENCE").cast("double"))
+
+## calculate median salary values
+median_from = df.approxQuantile("SALARY_FROM", [0.5], 0.01)[0]
+median_to = df.approxQuantile("SALARY_TO", [0.5], 0.01)[0]
+median_salary = df.approxQuantile("SALARY", [0.5], 0.01)[0]
+average_salary = (median_from + median_to)/2
+
+# print values
+print("Median SALARY_FROM:", median_from)
+print("Median SALARY_TO:", median_to)
+print("Median SALARY:", median_salary)
+print("Imputed Average_Salary:", average_salary)
+```
+
+```{python}
+# Impute Missing Salary values
+df = df.withColumn("SALARY_FROM", F.when(col("SALARY_FROM").isNull(), median_from).otherwise(col("SALARY_FROM"))).withColumn("SALARY_TO", F.when(col("SALARY_TO").isNull(), median_to).otherwise(col("SALARY_TO"))).withColumn("Salary", F.when(col("SALARY").isNull(), median_to).otherwise(col("SALARY"))).withColumn("Average_Salary", ((col("SALARY_FROM") + col("SALARY_TO"))/2).cast("double"))
+```
+
+```{python}
+## Clean EDUCATION_LEVELS_NAME column by removing ", \n, and \r characters 
+df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_NAME", r'[\n\r\"]',''))
+
+# Preview to verify that characters were removed correctly
+# df.select("EDUCATION_LEVELS_NAME").distinct().show(truncate=False)
+
+## Export Cleaned Data
+df.write.mode("overwrite").csv("cleaned_lightcast.csv", header=True)
+```
