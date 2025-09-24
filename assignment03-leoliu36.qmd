@@ -71,11 +71,9 @@ print("Imputed Average_Salary:", average_salary)
 ```
 
 ```{python}
-# Impute Missing Salary values
+## Impute Missing Salary values
 df = df.withColumn("SALARY_FROM", F.when(col("SALARY_FROM").isNull(), median_from).otherwise(col("SALARY_FROM"))).withColumn("SALARY_TO", F.when(col("SALARY_TO").isNull(), median_to).otherwise(col("SALARY_TO"))).withColumn("Salary", F.when(col("SALARY").isNull(), median_to).otherwise(col("SALARY"))).withColumn("Average_Salary", ((col("SALARY_FROM") + col("SALARY_TO"))/2).cast("double"))
-```
 
-```{python}
 ## Clean EDUCATION_LEVELS_NAME column by removing ", \n, and \r characters 
 df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_NAME", r'[\n\r\"]',''))
 
@@ -84,4 +82,34 @@ df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_N
 
 ## Export Cleaned Data
 df.write.mode("overwrite").csv("cleaned_lightcast.csv", header=True)
+```
+
+```{python}
+## 2. Salary Distribution by Industry and Employment Type
+# Filter dataset to remove records with missing or zero from SALARY_FROM
+filtered_df = df.filter((col("SALARY_FROM").isNotNull()) & (col("SALARY_FROM") > 0))
+
+# Aggregate Data to group by NAICS2_NAME and EMPLOYMENT_TYPE_NAME and include salary distribution
+df1 = filtered_df.select("SALARY_FROM", "NAICS2_NAME", "EMPLOYMENT_TYPE_NAME").toPandas()
+
+## Generate Visualization
+# Create Box Plot
+fig1 = px.box(
+  df1,
+  x="NAICS2_NAME",
+  y="SALARY_FROM",
+  color="EMPLOYMENT_TYPE_NAME",
+  title="Salary Distribution by Industry and Employment Type",
+)
+fig1.update_layout(
+    font=dict(family="Helvetica Neue", size=12, color="#333"),
+    title_font=dict(size=20, color="#1f77b4"),
+    colorway=["#ec7424", "#a4abab"],
+    xaxis_title="Industry",
+    yaxis_title="Minimum Salary ($)",
+    xaxis_tickangle=45,
+    hovermode="x unified",
+    height=600
+)
+fig1.show()
 ```
