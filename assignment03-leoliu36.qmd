@@ -22,6 +22,7 @@ execute:
   freeze: auto
 ---
 
+# Preparing the Dataset
 ```{python}
 import pandas as pd
 import plotly.express as px
@@ -84,8 +85,8 @@ df = df.withColumn("EDUCATION_LEVELS_NAME", F.regexp_replace("EDUCATION_LEVELS_N
 df.write.mode("overwrite").csv("cleaned_lightcast.csv", header=True)
 ```
 
+## Salary Distribution by Industry and Employment Type
 ```{python}
-## 2. Salary Distribution by Industry and Employment Type
 # Filter dataset to remove records with missing or zero from SALARY_FROM
 filtered_df = df.filter((col("SALARY_FROM").isNotNull()) & (col("SALARY_FROM") > 0))
 
@@ -126,4 +127,9 @@ fig1.update_layout(
     height=800
 )
 fig1.show()
+```
+## Salary Analysis by ONET Occupation Type (Bubble Chart)
+```{python}
+
+
 ```
