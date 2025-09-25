@@ -10,10 +10,9 @@ author:
 number-sections: true
 date: '2025-9-23'
 format:
-  html:
-    theme: cerulean
+  docx:
     toc: true
-    toc-depth: 2
+    number-sections: true
 date-modified: today
 date-format: long
 execute:
