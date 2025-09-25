@@ -21,7 +21,6 @@ execute:
   eval: false
   freeze: auto
 ---
-
 # Loading the Dataset
 ```{python}
 # Data Loading & Setup
@@ -44,13 +43,18 @@ pio.renderers.default = "notebook"
 spark = SparkSession.builder.appName("LightcastData").getOrCreate()
 
 # Load Data
-df = spark.read.option("header", "true").option("inferSchema", "true").option("multiLine","true").option("escape", "\"").csv("../data/lightcast_job_postings.csv")
+df = spark.read.option("header", "true").option("inferSchema", "true").option("multiLine", "true").option("quote", "\"").option("escape", "\"").csv("../data/lightcast_job_postings.csv")
 df.createOrReplaceTempView("job_postings")
 
 # Show Schema and Sample Data
 #print("---This is Diagnostic check, No need to print it in the final doc---")
-df.printSchema() # comment this line when rendering the submission
-df.show(5)
+#df.printSchema() # comment this line when rendering the submission
+#df.show(5)
+```
+
+```{python}
+# Use this to verify the dataset is not corrupt
+df.select("EMPLOYMENT_TYPE_NAME","LOT_OCCUPATION_NAME").distinct().show(truncate=False)
 ```
 
 # Data Cleaning
@@ -73,19 +77,27 @@ print("Imputed AVERAGE_SALARY:", average_salary)
 
 ## Impute Missing Salary values
 df = df.withColumn("SALARY_FROM", F.when(col("SALARY_FROM").isNull(), median_from).otherwise(col("SALARY_FROM"))).withColumn("SALARY_TO", F.when(col("SALARY_TO").isNull(), median_to).otherwise(col("SALARY_TO"))).withColumn("SALARY", F.when(col("SALARY").isNull(), median_to).otherwise(col("SALARY"))).withColumn("Average_Salary", ((col("SALARY_FROM") + col("SALARY_TO"))/2).cast("double"))
-#df.select([F.count(F.when(F.col("SALARY").isNull(), True)).alias("Missing_SALARY")]).show()
 
 ## Clean categorical columns by removing ", \n, and \r characters 
-df = df.withColumn("EMPLOYMENT_TYPE_NAME", trim(F.regexp_replace("EMPLOYMENT_TYPE_NAME", r'[\[\]\\n\\r\"]', ''))).withColumn("LOT_OCCUPATION_NAME", trim(F.regexp_replace("LOT_OCCUPATION_NAME", r'[\[\]\\n\\r\"]', ''))).withColumn("EDUCATION_LEVELS_NAME", trim(F.regexp_replace("EDUCATION_LEVELS_NAME", r'[\[\]\\n\\r\"]', '')))
-
-# Reload the data without complex options
-#df = spark.read.option("header", "true").option("inferSchema", "true").csv("../data/lightcast_job_postings.csv")
+unwanted_chars = r'[\[\]\n\r\"]'
+df = df.withColumn("EMPLOYMENT_TYPE_NAME", trim(F.regexp_replace("EMPLOYMENT_TYPE_NAME", unwanted_chars, ''))) \
+       .withColumn("LOT_OCCUPATION_NAME", trim(F.regexp_replace("LOT_OCCUPATION_NAME", unwanted_chars, ''))) \
+       .withColumn("EDUCATION_LEVELS_NAME", trim(F.regexp_replace("EDUCATION_LEVELS_NAME", unwanted_chars, ''))) \
+       .withColumn("LOT_V6_OCCUPATION_NAME", trim(F.regexp_replace("LOT_V6_OCCUPATION_NAME", unwanted_chars, ''))) \
+       .withColumn("LOT_V6_SPECIALIZED_OCCUPATION_NAME", trim(F.regexp_replace("LOT_V6_SPECIALIZED_OCCUPATION_NAME", unwanted_chars, '')))
 ```
 
 # Exporting Cleaned Data
 ```{python}
-## Export Cleaned Data and re-load the cleaned dataset to continue analysis
-df.write.mode("overwrite").csv("cleaned_lightcast.csv/", header=True)
+# Export cleaned data to a new csv, only including relevant columns for the analysis
+export_cols = [
+    "SALARY_FROM", "SALARY_TO", "SALARY", "Average_Salary",
+    "NAICS2_NAME", "EMPLOYMENT_TYPE_NAME", "MIN_YEARS_EXPERIENCE", "MAX_YEARS_EXPERIENCE", "LOT_OCCUPATION_NAME", "LOT_V6_OCCUPATION_NAME", "LOT_V6_SPECIALIZED_OCCUPATION_NAME", "EDUCATION_LEVELS_NAME", "REMOTE_TYPE_NAME"
+]
+df_export = df.select([col(c) for c in export_cols])
+
+df_export.write.mode("overwrite").csv("cleaned_lightcast.csv", header=True)
+# Reload
 df = spark.read.option("header", "true").option("inferSchema", "true").csv("cleaned_lightcast.csv/")
 ```
 
@@ -103,9 +115,7 @@ df1 = filtered_df1.select("SALARY_FROM", "NAICS2_NAME", "EMPLOYMENT_TYPE_NAME").
 # df.select("EMPLOYMENT_TYPE_NAME").distinct().show(truncate=False) verified that EMPLOYMENT_TYPE_NAME field required additional cleaning
 # Additional Cleaning on EMPLOYMENT_TYPE_NAME
 clean_legend = {
-  'Pat-time / full-time': 'Part-time / Full-time',
-  'Pat-time (â‰¤ 32 hous)':'Part-time (≤ 32 hours)',
-  'Full-time (> 32 hous)':'Full-time (> 32 hours)'
+  'Part-time (â‰¤ 32 hours)':'Part-time (≤ 32 hours)'
 }
 
 # Update df to use cleaned values and remove nulls
@@ -134,9 +144,11 @@ fig1.update_layout(
     height=800
 )
 fig1.show()
+fig1.write_image("figs/fig1.png", width=1000, height=600)
 ```
+Figure 1 shows that full-time employment largely offers the highest earning potential across all sectors. The highest earning roles are concentrated in industries that require technical specialties such as Information, Finance and Insurance, and Professional, Scientific, and Technical Services. 
 
-## Salary Analysis by ONET Occupation Type (Bubble Chart)
+## Salary Analysis by LOT Occupation Type (Bubble Chart)
 ```{python}
 # Filter data to remove nulls and zeros from SALARY_FROM and LOT_OCCUPATION_NAME
 filtered_df2 = df.filter(
@@ -154,7 +166,7 @@ filtered_df2_grouped = filtered_df2.groupBy("LOT_OCCUPATION_NAME").agg(
 
 # Convert to pandas and remove occupations with low job count
 df2 = filtered_df2_grouped.toPandas()
-df2 = df2[df2["Job_Postings"] > 50]
+#df2 = df2[df2["Job_Postings"] > 50]
 
 # Create Bubble Chart
 fig2 = px.scatter(
@@ -167,71 +179,98 @@ fig2 = px.scatter(
   size_max=100
 )
 fig2.update_layout(
-    font=dict(family="Helvetica Neue", size=9, color="#333"),
-    title_font=dict(size=20, color="#1f77b4"),
-    colorway=["#ec7424", "#a4abab"],
+    font=dict(family="Trebuchet MS", size=10, color="#333"),
+    title_font=dict(size=20, family="Trebuchet MS", color="#1f77b4"),
+    colorway=["#ef476f", "#ffd166", "#06d6a0", "#118ab2", "#073b4c"],
     xaxis_title="LOT Occupation",
     yaxis_title="Median Salary ($)",
     xaxis_tickangle=45,
     hovermode="closest",
-    width=1400,
+    width=1000,
     height=800
 )
 fig2.show()
+fig2.write_image("figs/fig2.png", width=1000, height=600)
 ```
+While median salary observed throughout these LOT occupation types are virtually identical,there is a significant difference in volume of job postings for Business Intelligence Analysts and Data Mining Analysts compared to the rest of the field. This suggests that those two roles are in high demand relative to the other roles. 
 
 # Salary by Education Level
 ```{python}
 # Filter data to remove missing salary and education levels
 filtered_df3 = df.filter(
-    (col("SALARY_FROM").isNotNull()) &
-    (col("SALARY_FROM") > 0) &
+    (col("Average_Salary").isNotNull()) &
+    (col("Average_Salary") > 0) &
+    (col("MAX_YEARS_EXPERIENCE").isNotNull()) &
+    (col("MAX_YEARS_EXPERIENCE") > 0) &
     (col("EDUCATION_LEVELS_NAME").isNotNull()) &
     (trim(col("EDUCATION_LEVELS_NAME")) != "")
 )
 
-# Group by EDUCATION_LEVELS_NAME and compute Median Salary & Job Count
-filtered_df3_grouped = filtered_df3.groupBy("EDUCATION_LEVELS_NAME").agg(
-    F.expr("percentile_approx(SALARY_FROM, 0.5)").alias("Median_Salary"),
-    F.count("*").alias("Job_Postings")
-)
-
 # Convert to pandas for plotting and sort by median salary descending
-df3 = filtered_df3_grouped.toPandas()
-df3 = df3.sort_values(by="Median_Salary", ascending=True)
+df3 = filtered_df3.select(
+    "Average_Salary", "MAX_YEARS_EXPERIENCE", "EDUCATION_LEVELS_NAME"
+).toPandas()
 
-# Create horizontal bar chart
-fig3 = px.bar(
+# Convert to appropriate types
+df3["MAX_YEARS_EXPERIENCE"] = pd.to_numeric(df3["MAX_YEARS_EXPERIENCE"], errors='coerce')
+df3 = df3.dropna(subset=["MAX_YEARS_EXPERIENCE", "Average_Salary", "EDUCATION_LEVELS_NAME"])
+
+# Group education levels into 4 categories
+def education_group(edu):
+    edu = edu.lower()
+    if any(keyword in edu for keyword in ["high school", "ged", "associate", "no education"]):
+        return "Associate’s or Lower"
+    elif "bachelor" in edu:
+        return "Bachelor’s"
+    elif "master" in edu:
+        return "Master’s"
+    elif "phd" in edu or "doctor" in edu or "professional" in edu:
+        return "PhD"
+    else:
+        return None  # Exclude undefined cases
+        
+df3["Education Group"] = df3["EDUCATION_LEVELS_NAME"].apply(education_group)
+df3 = df3.dropna(subset=["Education Group"])
+
+np.random.seed(42)
+df3["Experience_Jitter"] = np.clip(
+    df3["MAX_YEARS_EXPERIENCE"] + np.random.normal(0, 0.1, size=len(df3)),
+    0, None)
+
+# Create scatter plot
+fig3 = px.scatter(
     df3,
-    x="Median_Salary",
-    y="EDUCATION_LEVELS_NAME",
-    orientation="h",
-    text="Median_Salary",
-    title="Median Salary by Education Level",
-    labels={"EDUCATION_LEVELS_NAME": "Education Level", "Median_Salary": "Median Salary ($)"}
+    x="Experience_Jitter",
+    y="Average_Salary",
+    color="Education Group",
+    title="Experience vs Salary by Education Level",
+    opacity=0.8
 )
 
+# Update layout to match academic formatting
 fig3.update_layout(
-    font=dict(family="Helvetica Neue", size=9, color="#333"),
-    title_font=dict(size=20, color="#1f77b4"),
-    colorway=["#1f77b4"],
-    xaxis_title="Median Salary ($)",
-    yaxis_title="Education Level",
-    hovermode="y unified",
+    font=dict(family="Georgia", size=12),
+    title_font=dict(size=18, family="Georgia", color="#000"),
+    xaxis=dict(range=[0, df3["Experience_Jitter"].max() + 1], tickmode="linear",dtick=1, title="Years of Experience"),
+    yaxis=dict(range=[0, df3["Average_Salary"].max() + 10000], title="Average Salary (USD)"),
+    legend_title_text="Education Group",
     width=900,
-    height=500
+    height=600
 )
 fig3.show()
+fig3.write_image("figs/fig3.png", width=1000, height=600)
 ```
+According to Figure 3, there isn't a significant salary discrepancy between Bachelor's and Associate's degree holders, while Master's and PhD degree holders tend to earn more. The trend shows that salary increases with more years of experience for all levels of education and the growth begins to plateau around year 6 and onwards. 
 
-# Salary by Education Level
+# Salary by Remote Work Type
 ```{python}
 # Filter data invalid entries
 filtered_df4 = df.filter(
-    (col("SALARY_FROM").isNotNull()) &
-    (col("SALARY_FROM") > 0) &
-    (col("REMOTE_TYPE_NAME").isNotNull()) &
-    (trim(col("REMOTE_TYPE_NAME")) != "")
+    (col("Average_Salary").isNotNull()) &
+    (col("Average_Salary") > 0) &
+    (col("MAX_YEARS_EXPERIENCE") > 0) &
+    (col("MAX_YEARS_EXPERIENCE").isNotNull()) &
+    (col("LOT_V6_SPECIALIZED_OCCUPATION_NAME").isNotNull())
 )
 
 # Group by Remote Work Type and calculate Median Salary & Job Count
@@ -241,28 +280,57 @@ filtered_df4_grouped = filtered_df4.groupBy("REMOTE_TYPE_NAME").agg(
 )
 
 # Convert to pandas
-df4 = filtered_df4_grouped.toPandas()
-df4 = df4.sort_values(by="Median_Salary", ascending=True)
+df4 = filtered_df4.select(
+    "MAX_YEARS_EXPERIENCE",
+    "Average_Salary",
+    "REMOTE_TYPE_NAME",
+    "LOT_V6_SPECIALIZED_OCCUPATION_NAME"
+).toPandas()
+
+# Map REMOTE_TYPE_NAME into 3 groups: 
+def map_remote_type(rt):
+    if pd.isnull(rt) or rt.strip() in ["", "[None]", "Not Remote"]:
+        return "Onsite"
+    rt_lower = rt.strip().lower()
+    if "hybrid" in rt_lower:
+        return "Hybrid"
+    elif rt_lower == "remote":
+        return "Remote"
+    else:
+        return "Onsite"
+
+df4["Remote Work Type"] = df4["REMOTE_TYPE_NAME"].apply(map_remote_type)
+
+np.random.seed(42)
+df4["Experience_Jitter"] = np.clip(df4["MAX_YEARS_EXPERIENCE"] + np.random.normal(0, 0.1, size=len(df4)),0, None)
 
 # Create horizontal bar chart
-fig4 = px.bar(
+# Step 5: Create the scatter plot
+fig4 = px.scatter(
     df4,
-    x="Median_Salary",
-    y="REMOTE_TYPE_NAME",
-    orientation="h",
-    text="Median_Salary",
-    title="Median Salary by Remote Work Type",
-    labels={"REMOTE_TYPE_NAME": "Remote Work Type", "Median_Salary": "Median Salary ($)"}
+    x="Experience_Jitter",
+    y="Average_Salary",
+    color="Remote Work Type",
+    hover_data=["LOT_V6_SPECIALIZED_OCCUPATION_NAME"],
+    title="Experience vs Salary by Remote Work Type",
+    labels={
+        "Experience_Jitter": "Years of Experience",
+        "Average_Salary": "Average Salary (USD)"
+    },
+    opacity=0.9
 )
 
 fig4.update_layout(
-    font=dict(family="Helvetica Neue", size=9, color="#333"),
-    title_font=dict(size=20, color="#1f77b4"),
-    xaxis_title="Median Salary ($)",
-    yaxis_title="Remote Work Type",
-    hovermode="y unified",
+    font=dict(family="Courier New", size=12),  
+    title_font=dict(size=18, color="#2a4d69", family="Courier New"),  
+    legend_title="Remote Work Type",
+    colorway=["#ffa07a", "#20b2aa", "#9370db"],  
+    xaxis=dict(range=[0, df3["Experience_Jitter"].max() + 1], tickmode="linear", dtick=1, title="Years of Experience"),
+    yaxis=dict(range=[0, df3["Average_Salary"].max() + 10000],title="Average Salary (USD)"),
     width=900,
-    height=500
+    height=600
 )
 fig4.show()
+fig4.write_image("figs/fig4.png", width=1000, height=600)
 ```
+The plot shows that for entry-level jobs, on-site roles tend to out-earn remote and hybrid roles. However, the salary advantage shifts towards remote roles as the required years of experience increases. 
